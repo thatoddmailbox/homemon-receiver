@@ -15,6 +15,9 @@ type config struct {
 	// Token sets the token used to authenticate reports.
 	Token      string
 	tokenBytes []byte
+
+	// DatabaseDSN sets the DSN used to connect to MySQL. See https://github.com/Go-SQL-Driver/MySQL/#dsn-data-source-name
+	DatabaseDSN string
 }
 
 var currentConfig config

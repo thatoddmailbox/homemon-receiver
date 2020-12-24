@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"time"
 )
 
 const batteryCapacityError = 0x7F
@@ -57,7 +58,14 @@ func handlePacket(client *net.UDPAddr, data []byte) {
 	usbPresent := (message[0] & 0x80) != 0
 	batteryVoltage := binary.BigEndian.Uint16(message[1:]) & 0x1FFF
 	usbError := (message[1] & 0x80) != 0
-	timestamp := binary.BigEndian.Uint64(message[3:])
+	messageTimestamp := int64(binary.BigEndian.Uint64(message[3:]))
+	currentTimestamp := time.Now().Unix()
+
+	if currentTimestamp-messageTimestamp > 10 || currentTimestamp-messageTimestamp < -10 {
+		// it's a difference of more than 10 seconds, consider the message expired
+		log.Printf("Got expired message from %s, ignoring!", client.String())
+		return
+	}
 
 	var powered usbStatus
 	if usbPresent && !usbError {
@@ -68,12 +76,29 @@ func handlePacket(client *net.UDPAddr, data []byte) {
 		powered = usbStatusError
 	}
 
-	log.Println(batteryCapacity)
-	log.Println(usbPresent)
-	log.Println(batteryVoltage)
-	log.Println(usbError)
-	log.Println(timestamp)
-	log.Println(powered)
+	batteryCapacityDatabase := int8(batteryCapacity)
+	if batteryCapacity == batteryCapacityError {
+		batteryCapacityDatabase = -1
+	}
+
+	batteryVoltageDatabase := int16(batteryVoltage)
+	if batteryVoltage == batteryVoltageError {
+		batteryVoltageDatabase = -1
+	}
+
+	_, err := db.Exec(
+		"INSERT INTO reports(powered, batteryLevel, batteryVoltage, ip, timestamp) VALUES(?, ?, ?, ?, ?)",
+		powered,
+		batteryCapacityDatabase,
+		batteryVoltageDatabase,
+		client.IP.String(),
+		currentTimestamp,
+	)
+	if err != nil {
+		log.Printf("Encountered error when processing message from %s!", client.String())
+		log.Println(err)
+		return
+	}
 }
 
 func main() {
@@ -92,6 +117,11 @@ func main() {
 	log.Println("homemon-receiver")
 
 	err := loadConfig()
+	if err != nil {
+		panic(err)
+	}
+
+	err = connectToDatabase()
 	if err != nil {
 		panic(err)
 	}
