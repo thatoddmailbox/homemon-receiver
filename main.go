@@ -5,11 +5,22 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
+	"encoding/binary"
 	"flag"
 	"fmt"
 	"log"
 	"net"
+)
+
+const batteryCapacityError = 0x7F
+const batteryVoltageError = 0x1FFF
+
+type usbStatus int8
+
+const (
+	usbStatusNotPresent usbStatus = 0
+	usbStatusPresent    usbStatus = 1
+	usbStatusError      usbStatus = -1
 )
 
 func validateHMAC(message, messageMAC, key []byte) bool {
@@ -21,8 +32,6 @@ func validateHMAC(message, messageMAC, key []byte) bool {
 }
 
 func handlePacket(client *net.UDPAddr, data []byte) {
-	log.Println(client)
-	fmt.Println(hex.Dump(data))
 	// 1 byte for battery capacity and power state
 	// 2 bytes for battery voltage and power state error flag
 	// 8 bytes for timestamp
@@ -37,14 +46,34 @@ func handlePacket(client *net.UDPAddr, data []byte) {
 
 	// first, validate mac
 	message := data[:messageLength]
-	mac := data[:macLength]
+	mac := data[messageLength : messageLength+macLength]
 	if !validateHMAC(message, mac, currentConfig.tokenBytes) {
 		// ignore
 		return
 	}
 
-	log.Println(client)
-	fmt.Println(hex.Dump(data))
+	// see homemon-daemon's transportUDP.go for clearer documentation about the format
+	batteryCapacity := message[0] & 0x7F
+	usbPresent := (message[0] & 0x80) != 0
+	batteryVoltage := binary.BigEndian.Uint16(message[1:]) & 0x1FFF
+	usbError := (message[1] & 0x80) != 0
+	timestamp := binary.BigEndian.Uint64(message[3:])
+
+	var powered usbStatus
+	if usbPresent && !usbError {
+		powered = usbStatusPresent
+	} else if !usbPresent && !usbError {
+		powered = usbStatusNotPresent
+	} else {
+		powered = usbStatusError
+	}
+
+	log.Println(batteryCapacity)
+	log.Println(usbPresent)
+	log.Println(batteryVoltage)
+	log.Println(usbError)
+	log.Println(timestamp)
+	log.Println(powered)
 }
 
 func main() {
