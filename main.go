@@ -87,11 +87,13 @@ func handlePacket(client *net.UDPAddr, data []byte) {
 	}
 
 	_, err := db.Exec(
-		"INSERT INTO reports(powered, batteryLevel, batteryVoltage, ip, timestamp) VALUES(?, ?, ?, ?, ?)",
+		"INSERT INTO reports(powered, batteryLevel, batteryVoltage, ip, transport, clientTimestamp, timestamp) VALUES(?, ?, ?, ?, ?, ?, ?)",
 		powered,
 		batteryCapacityDatabase,
 		batteryVoltageDatabase,
 		client.IP.String(),
+		1,
+		messageTimestamp,
 		currentTimestamp,
 	)
 	if err != nil {
